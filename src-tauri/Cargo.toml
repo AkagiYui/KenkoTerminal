@@ -1,0 +1,27 @@
+[package]
+name = "kenkoterminal"
+version = "0.1.0"
+description = "KenkoTerminal — multi-protocol terminal, tunnel daemon, serial debugger"
+authors = ["AkagiYui"]
+edition = "2021"
+
+[lib]
+name = "kenkoterminal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.8"
+parking_lot = "0.12"
+
+# --- disk-saving dev profile (see PLAN.md §"空间规划") ---
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
