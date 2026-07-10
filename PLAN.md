@@ -255,9 +255,16 @@ P5(监控侧栏)为高价值竖切,P6(批量)、P7(打磨)收尾。
 
 ---
 
-## 9. 立即可做的下一步
+## 9. 实现状态(已完成)
 
-1. 前端已定:**React 19 + React Compiler + Vite 8 + pnpm + Iconify(`vite-plugin-iconify-offline`)**。
-2. 搭 P0 骨架:Tauri v2 + React 19 + Vite 8 + pnpm + xterm + portable-pty(前端参考 `tmp/oxideterm`,Tauri 参考 `tmp/rssh`),开启 React Compiler。
-3. 第一天就把 **mac + win 的 CI 矩阵**架起来。
-4. 完成 P0 验收:两端都能敲本地 shell —— 以此确认 ConPTY 与 IPC 吞吐没问题,再进 P1。
+**P0–P6 + 需求 R1–R13 全部实现、逐阶段提交推送、mac+win 双平台 CI 绿**;SSH/转发/SFTP/监控/批量
+已对真实服务器实测,串口已对烧录固件的 ESP32-C3 实测。
+
+- 后端(Rust/Tauri2):`transport`(pty / ssh / serial / telnet)、`ssh`(agent+密码+known_hosts)、
+  `tunnel`(自启 + 无限重连)、`monitor`(/proc 流式)、`sftp`、`batch`(fan-out)、`daemon`(托盘/自启/隐藏/单实例)。
+- 前端(React19 + Vite8):多标签终端 + **广播**、串口调试器(Text/HEX/Plot)、文件管理(OSC7 跟踪)、
+  监控侧栏、批量控制台。
+- CI:`CI`(typecheck + cargo check,mac+win)+ `Bundle`(tauri build → 上传安装包 artifact)。
+
+**唯一剩余 = P7 签名/公证/自动更新** —— 需你的 Apple/Windows 证书 + 更新签名密钥与托管端点,属硬前置,
+非代码问题(详见 [README](README.md))。备好证书即可接上 CI 签名步骤与 `tauri-plugin-updater`。
