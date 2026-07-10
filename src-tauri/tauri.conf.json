@@ -16,7 +16,8 @@
         "title": "KenkoTerminal",
         "width": 1000,
         "height": 700,
-        "visible": false
+        "visible": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {

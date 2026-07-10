@@ -28,12 +28,20 @@ export function FileManager({ cwd }: { cwd?: string }) {
   const [user, setUser] = useState("root");
   const [password, setPassword] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+  const [follow, setFollow] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     return () => {
       if (id != null) void sftpClose(id);
     };
   }, [id]);
+
+  // Auto-follow the terminal's cwd (OSC 7) when enabled.
+  useEffect(() => {
+    if (follow && id != null && cwd) void navigate(id, cwd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd, follow, id]);
 
   async function navigate(cid: number, p: string) {
     try {
@@ -80,13 +88,22 @@ export function FileManager({ cwd }: { cwd?: string }) {
 
   async function upload(file: File) {
     if (id == null) return;
+    setBusy(true);
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
       await sftpWrite(id, joinPath(path, file.name), Array.from(buf));
       refresh();
     } catch (e) {
       setErr(String(e));
+    } finally {
+      setBusy(false);
     }
+  }
+
+  async function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    if (id == null) return;
+    for (const f of Array.from(e.dataTransfer.files)) await upload(f);
   }
 
   async function mkdir() {
@@ -147,6 +164,14 @@ export function FileManager({ cwd }: { cwd?: string }) {
             ⤓cwd
           </button>
         )}
+        <button
+          className={`${iconBtn} ${follow ? "text-teal-400" : ""}`}
+          title="auto-follow terminal cwd (OSC 7)"
+          onClick={() => setFollow((v) => !v)}
+        >
+          ⇄follow
+        </button>
+        {busy && <span className="ml-auto text-neutral-500">transferring…</span>}
         <input
           ref={fileInput}
           type="file"
@@ -161,7 +186,7 @@ export function FileManager({ cwd }: { cwd?: string }) {
       <div className="truncate border-b border-neutral-800 px-2 py-1 text-xs text-neutral-400" title={path}>
         {path}
       </div>
-      <ul className="min-h-0 flex-1 overflow-y-auto">
+      <ul className="min-h-0 flex-1 overflow-y-auto" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
         {entries.map((entry) => (
           <li key={entry.name} className="group flex items-center gap-2 px-2 py-0.5 hover:bg-neutral-800/60">
             <button className="flex-1 truncate text-left" onClick={() => onEntry(entry)} title={entry.name}>
