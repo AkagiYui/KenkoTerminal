@@ -17,13 +17,17 @@ export function TerminalView({
   onStatus,
   onSession,
   onCwd,
+  onInput,
 }: {
   spec: SessionSpec;
   onStatus?: (s: string) => void;
   onSession?: (s: Session | null) => void;
   onCwd?: (path: string) => void;
+  onInput?: (data: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onInputRef = useRef(onInput);
+  onInputRef.current = onInput;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -74,7 +78,8 @@ export function TerminalView({
         session = s;
         onStatus?.(`${spec.kind} connected`);
         onSession?.(s);
-        term.onData((d) => void writeSession(s, d));
+        // When App provides onInput (broadcast-aware), route through it; else write direct.
+        term.onData((d) => (onInputRef.current ? onInputRef.current(d) : void writeSession(s, d)));
       } catch (e) {
         onStatus?.(`error: ${String(e)}`);
         term.writeln(`\r\n\x1b[31m${String(e)}\x1b[0m`);
