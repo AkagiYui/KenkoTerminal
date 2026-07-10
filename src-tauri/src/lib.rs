@@ -8,6 +8,7 @@ mod serial;
 pub mod sftp;
 pub mod ssh;
 mod ssh_config;
+mod sync;
 mod telnet;
 pub mod tunnel;
 
@@ -75,6 +76,8 @@ pub fn run() {
             connections::conn_save,
             connections::conn_delete,
             connections::conn_password,
+            sync::config_sync_push,
+            sync::config_sync_pull,
             tunnel::tunnel_list,
             tunnel::tunnel_add,
             tunnel::tunnel_remove,

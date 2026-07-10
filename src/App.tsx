@@ -7,6 +7,7 @@ import { Monitor } from "./components/Monitor";
 import { Batch } from "./components/Batch";
 import { SerialDebugger } from "./components/SerialDebugger";
 import { SavedConnections } from "./components/SavedConnections";
+import { SyncPanel } from "./components/SyncPanel";
 import { connSave } from "./lib/connections";
 import { serialSetSignal, writeSession, type Session, type SessionSpec } from "./lib/session";
 import { useTranslation } from "react-i18next";
@@ -185,6 +186,10 @@ export default function App() {
 
         <div className="border-t border-neutral-800 pt-3">
           <Tunnels />
+        </div>
+
+        <div className="border-t border-neutral-800 pt-3">
+          <SyncPanel />
         </div>
       </aside>
 
