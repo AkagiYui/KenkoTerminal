@@ -4,6 +4,7 @@ import { Tunnels } from "./components/Tunnels";
 import { Serial } from "./components/Serial";
 import { FileManager } from "./components/FileManager";
 import { Monitor } from "./components/Monitor";
+import { Batch } from "./components/Batch";
 import { serialSetSignal, type Session, type SessionSpec } from "./lib/session";
 
 const inputCls =
@@ -20,6 +21,7 @@ export default function App() {
   const [rts, setRts] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [showMonitor, setShowMonitor] = useState(false);
+  const [showBatch, setShowBatch] = useState(false);
   const [cwd, setCwd] = useState<string | undefined>(undefined);
 
   const [host, setHost] = useState("");
@@ -111,6 +113,12 @@ export default function App() {
               </>
             )}
             <button
+              className={`${chipCls} ${showBatch ? "bg-teal-800" : ""}`}
+              onClick={() => setShowBatch((v) => !v)}
+            >
+              Batch
+            </button>
+            <button
               className={`${chipCls} ${showMonitor ? "bg-teal-800" : ""}`}
               onClick={() => setShowMonitor((v) => !v)}
             >
@@ -132,7 +140,9 @@ export default function App() {
             </div>
           )}
           <div className="min-h-0 flex-1">
-            {spec ? (
+            {showBatch ? (
+              <Batch host={host} user={user} password={password} />
+            ) : spec ? (
               <TerminalView
                 key={sessionKey}
                 spec={spec}

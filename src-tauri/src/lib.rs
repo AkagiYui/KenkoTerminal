@@ -1,3 +1,4 @@
+pub mod batch;
 mod config;
 mod daemon;
 mod monitor;
@@ -59,6 +60,7 @@ pub fn run() {
             monitor::probe_system,
             monitor::monitor_start,
             monitor::monitor_stop,
+            batch::batch_run,
             tunnel::tunnel_list,
             tunnel::tunnel_add,
             tunnel::tunnel_remove,
