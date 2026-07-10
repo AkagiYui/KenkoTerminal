@@ -31,6 +31,10 @@ export const listSerialPorts = () => invoke<SerialPortEntry[]>("serial_list");
 export const serialSetSignal = (id: number, dtr: boolean, rts: boolean) =>
   invoke<void>("serial_set_signal", { id, dtr, rts });
 
+/** esptool-style reset: bootloader=false → run, true → ROM download mode. */
+export const serialEspReset = (id: number, bootloader: boolean) =>
+  invoke<void>("serial_esp_reset", { id, bootloader });
+
 const WRITE: Record<SessionKind, string> = {
   local: "pty_write",
   ssh: "ssh_write",

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { listSerialPorts, serialSetSignal, type SerialPortEntry } from "../lib/session";
+import { listSerialPorts, serialSetSignal, serialEspReset, type SerialPortEntry } from "../lib/session";
 import { openSerialRaw, writeSerialBytes, closeSerial, fmtTime } from "../lib/serialDebug";
 
 const inputCls =
@@ -123,9 +123,10 @@ export function SerialDebugger() {
     await serialSetSignal(id, nd, nr);
   }
   async function reset() {
-    if (id == null) return;
-    await serialSetSignal(id, false, true);
-    setTimeout(() => void serialSetSignal(id, false, false), 150);
+    if (id != null) await serialEspReset(id, false);
+  }
+  async function boot() {
+    if (id != null) await serialEspReset(id, true);
   }
 
   const hexRows: { off: string; hex: string; ascii: string }[] = [];
@@ -161,7 +162,8 @@ export function SerialDebugger() {
           ))}
           {id != null && (
             <>
-              <button className={chip} onClick={reset} title="pulse EN (reset)">Reset</button>
+              <button className={chip} onClick={reset} title="reset to run">Reset</button>
+              <button className={chip} onClick={boot} title="enter bootloader (esptool sequence)">Boot</button>
               <button className={`${chip} ${dtr ? "bg-teal-800" : ""}`} onClick={() => setSignals(!dtr, rts)}>DTR</button>
               <button className={`${chip} ${rts ? "bg-teal-800" : ""}`} onClick={() => setSignals(dtr, !rts)}>RTS</button>
             </>

@@ -52,6 +52,7 @@ pub fn run() {
             serial::serial_write,
             serial::serial_write_bytes,
             serial::serial_set_signal,
+            serial::serial_esp_reset,
             serial::serial_close,
             sftp::sftp_connect,
             sftp::sftp_list,
