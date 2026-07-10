@@ -81,8 +81,16 @@ pub(crate) async fn connect_and_auth(cfg: &SshConfig) -> Result<Handle<Client>> 
         .await
         .with_context(|| format!("connect {}:{}", cfg.host, cfg.port))?;
 
-    // 1) ssh-agent — reuse the user's native keys (R2).
-    if let Ok(mut agent) = AgentClient::connect_env().await {
+    // 1) ssh-agent — reuse the user's native keys (R2). Cross-platform:
+    //    SSH_AUTH_SOCK on unix, the OpenSSH named pipe on Windows.
+    #[cfg(unix)]
+    let agent = AgentClient::connect_env().await.ok();
+    #[cfg(windows)]
+    let agent = AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent")
+        .await
+        .ok();
+
+    if let Some(mut agent) = agent {
         if let Ok(identities) = agent.request_identities().await {
             for key in identities {
                 if let Ok(AuthResult::Success) = handle
