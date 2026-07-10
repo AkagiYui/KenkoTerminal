@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { TerminalView } from "./components/Terminal";
+import { Tunnels } from "./components/Tunnels";
 import type { SessionSpec } from "./lib/session";
 
 const inputCls =
@@ -62,6 +63,10 @@ export default function App() {
             Connect
           </button>
         </form>
+
+        <div className="overflow-y-auto border-t border-neutral-800 pt-3">
+          <Tunnels />
+        </div>
 
         <div className="mt-auto truncate text-xs text-neutral-500" title={status}>
           {status}

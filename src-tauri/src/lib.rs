@@ -1,14 +1,29 @@
+mod config;
+mod daemon;
 mod pty;
 pub mod ssh;
+pub mod tunnel;
+
+use tauri::Manager;
 
 use pty::PtyManager;
 use ssh::SshManager;
+use tunnel::TunnelManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Single instance must be registered first; a second launch reveals the window.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            daemon::show_main(app);
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(PtyManager::default())
         .manage(SshManager::default())
+        .manage(TunnelManager::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
             pty::pty_write,
@@ -18,7 +33,38 @@ pub fn run() {
             ssh::ssh_write,
             ssh::ssh_resize,
             ssh::ssh_close,
+            tunnel::tunnel_list,
+            tunnel::tunnel_add,
+            tunnel::tunnel_remove,
         ])
+        .setup(|app| {
+            // Launch as a background/tray app on macOS: no dock icon, no window.
+            #[cfg(target_os = "macos")]
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            daemon::setup(app)?;
+            // Auto-start persisted tunnels on launch (R5).
+            let manager = app.state::<TunnelManager>();
+            for rule in config::load_tunnels() {
+                if rule.enabled {
+                    manager.start(rule);
+                }
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Close hides to tray instead of quitting — the daemon stays alive.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = window
+                        .app_handle()
+                        .set_activation_policy(tauri::ActivationPolicy::Accessory);
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -17,12 +17,12 @@ use russh::keys::agent::client::AgentClient;
 use russh::keys::known_hosts::{check_known_hosts, learn_known_hosts};
 use russh::keys::ssh_key;
 use russh::ChannelMsg;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::async_runtime;
 use tauri::ipc::Channel;
 use tokio::sync::mpsc;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshConfig {
     pub host: String,
     #[serde(default = "default_port")]
@@ -37,10 +37,13 @@ fn default_port() -> u16 {
 }
 
 /// russh client handler — verifies the server host key (TOFU over known_hosts).
-struct Client {
+pub(crate) struct Client {
     host: String,
     port: u16,
 }
+
+/// Authenticated client connection handle (used by the tunnel supervisor).
+pub(crate) type SshHandle = Handle<Client>;
 
 impl client::Handler for Client {
     type Error = russh::Error;
@@ -69,7 +72,7 @@ fn russh_config() -> Arc<client::Config> {
 }
 
 /// Connect and authenticate. Auth order: ssh-agent → password.
-async fn connect_and_auth(cfg: &SshConfig) -> Result<Handle<Client>> {
+pub(crate) async fn connect_and_auth(cfg: &SshConfig) -> Result<Handle<Client>> {
     let handler = Client {
         host: cfg.host.clone(),
         port: cfg.port,
