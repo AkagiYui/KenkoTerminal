@@ -5,6 +5,7 @@ import { Serial } from "./components/Serial";
 import { FileManager } from "./components/FileManager";
 import { Monitor } from "./components/Monitor";
 import { Batch } from "./components/Batch";
+import { SerialDebugger } from "./components/SerialDebugger";
 import { serialSetSignal, type Session, type SessionSpec } from "./lib/session";
 
 const inputCls =
@@ -22,12 +23,15 @@ export default function App() {
   const [showFiles, setShowFiles] = useState(false);
   const [showMonitor, setShowMonitor] = useState(false);
   const [showBatch, setShowBatch] = useState(false);
+  const [showDebugger, setShowDebugger] = useState(false);
   const [cwd, setCwd] = useState<string | undefined>(undefined);
 
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
   const [user, setUser] = useState("root");
   const [password, setPassword] = useState("");
+  const [telnetHost, setTelnetHost] = useState("");
+  const [telnetPort, setTelnetPort] = useState("23");
 
   function launch(next: SessionSpec) {
     setSpec(next);
@@ -88,6 +92,23 @@ export default function App() {
           <Serial onLaunch={launch} />
         </div>
 
+        <form
+          className="flex flex-col gap-2 border-t border-neutral-800 pt-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            launch({ kind: "telnet", host: telnetHost, port: Number(telnetPort) || 23 });
+          }}
+        >
+          <div className="text-xs uppercase tracking-wider text-neutral-500">Telnet</div>
+          <div className="flex gap-1">
+            <input className={inputCls} placeholder="host" value={telnetHost} onChange={(e) => setTelnetHost(e.target.value)} />
+            <input className={`${inputCls} w-16`} placeholder="port" value={telnetPort} onChange={(e) => setTelnetPort(e.target.value)} />
+          </div>
+          <button className={btnCls} type="submit" disabled={!telnetHost}>
+            Connect
+          </button>
+        </form>
+
         <div className="border-t border-neutral-800 pt-3">
           <Tunnels />
         </div>
@@ -112,6 +133,12 @@ export default function App() {
                 </button>
               </>
             )}
+            <button
+              className={`${chipCls} ${showDebugger ? "bg-teal-800" : ""}`}
+              onClick={() => setShowDebugger((v) => !v)}
+            >
+              Debugger
+            </button>
             <button
               className={`${chipCls} ${showBatch ? "bg-teal-800" : ""}`}
               onClick={() => setShowBatch((v) => !v)}
@@ -142,6 +169,8 @@ export default function App() {
           <div className="min-h-0 flex-1">
             {showBatch ? (
               <Batch host={host} user={user} password={password} />
+            ) : showDebugger ? (
+              <SerialDebugger />
             ) : spec ? (
               <TerminalView
                 key={sessionKey}

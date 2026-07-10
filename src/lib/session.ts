@@ -10,10 +10,13 @@ export type SshConfig = {
 export type SessionSpec =
   | { kind: "local" }
   | { kind: "ssh"; config: SshConfig }
-  | { kind: "serial"; path: string; baud: number };
+  | { kind: "serial"; path: string; baud: number }
+  | { kind: "telnet"; host: string; port: number };
 
-/** A live backend session (local PTY, SSH channel, or serial port). */
-export type Session = { kind: "local" | "ssh" | "serial"; id: number };
+export type SessionKind = "local" | "ssh" | "serial" | "telnet";
+
+/** A live backend session. */
+export type Session = { kind: SessionKind; id: number };
 
 export type SerialPortEntry = {
   name: string;
@@ -25,9 +28,21 @@ export type SerialPortEntry = {
 
 export const listSerialPorts = () => invoke<SerialPortEntry[]>("serial_list");
 
-/** DTR/RTS line control (board reset / boot-mode). */
 export const serialSetSignal = (id: number, dtr: boolean, rts: boolean) =>
   invoke<void>("serial_set_signal", { id, dtr, rts });
+
+const WRITE: Record<SessionKind, string> = {
+  local: "pty_write",
+  ssh: "ssh_write",
+  serial: "serial_write",
+  telnet: "telnet_write",
+};
+const KILL: Record<SessionKind, string> = {
+  local: "pty_kill",
+  ssh: "ssh_close",
+  serial: "serial_close",
+  telnet: "telnet_close",
+};
 
 export async function spawnSession(
   spec: SessionSpec,
@@ -38,40 +53,40 @@ export async function spawnSession(
   const channel = new Channel<number[]>();
   channel.onmessage = (msg) => onOutput(Uint8Array.from(msg));
 
-  if (spec.kind === "local") {
-    const id = await invoke<number>("pty_spawn", { cols, rows, onOutput: channel });
-    return { kind: "local", id };
+  switch (spec.kind) {
+    case "local": {
+      const id = await invoke<number>("pty_spawn", { cols, rows, onOutput: channel });
+      return { kind: "local", id };
+    }
+    case "ssh": {
+      const id = await invoke<number>("ssh_connect", { config: spec.config, cols, rows, onOutput: channel });
+      return { kind: "ssh", id };
+    }
+    case "serial": {
+      const id = await invoke<number>("serial_open", {
+        path: spec.path,
+        baud: spec.baud,
+        assertDtrRts: false,
+        onOutput: channel,
+      });
+      return { kind: "serial", id };
+    }
+    case "telnet": {
+      const id = await invoke<number>("telnet_open", { host: spec.host, port: spec.port, onOutput: channel });
+      return { kind: "telnet", id };
+    }
   }
-  if (spec.kind === "ssh") {
-    const id = await invoke<number>("ssh_connect", {
-      config: spec.config,
-      cols,
-      rows,
-      onOutput: channel,
-    });
-    return { kind: "ssh", id };
-  }
-  const id = await invoke<number>("serial_open", {
-    path: spec.path,
-    baud: spec.baud,
-    assertDtrRts: false, // never auto-reset the board on connect
-    onOutput: channel,
-  });
-  return { kind: "serial", id };
 }
 
 export function writeSession(s: Session, data: string): Promise<void> {
-  const cmd = s.kind === "local" ? "pty_write" : s.kind === "ssh" ? "ssh_write" : "serial_write";
-  return invoke(cmd, { id: s.id, data });
+  return invoke(WRITE[s.kind], { id: s.id, data });
 }
 
 export function resizeSession(s: Session, cols: number, rows: number): Promise<void> {
-  if (s.kind === "serial") return Promise.resolve(); // serial has no window size
-  const cmd = s.kind === "local" ? "pty_resize" : "ssh_resize";
-  return invoke(cmd, { id: s.id, cols, rows });
+  if (s.kind === "serial" || s.kind === "telnet") return Promise.resolve(); // no window size
+  return invoke(s.kind === "local" ? "pty_resize" : "ssh_resize", { id: s.id, cols, rows });
 }
 
 export function killSession(s: Session): Promise<void> {
-  const cmd = s.kind === "local" ? "pty_kill" : s.kind === "ssh" ? "ssh_close" : "serial_close";
-  return invoke(cmd, { id: s.id });
+  return invoke(KILL[s.kind], { id: s.id });
 }

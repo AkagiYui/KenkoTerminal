@@ -103,6 +103,19 @@ pub fn serial_write(
     p.flush().map_err(|e| e.to_string())
 }
 
+/// Write raw bytes (debugger hex send / custom line endings).
+#[tauri::command]
+pub fn serial_write_bytes(
+    manager: tauri::State<'_, SerialManager>,
+    id: u32,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    let mut ports = manager.ports.lock();
+    let p = ports.get_mut(&id).ok_or("no such serial port")?;
+    p.write_all(&data).map_err(|e| e.to_string())?;
+    p.flush().map_err(|e| e.to_string())
+}
+
 /// Control DTR/RTS lines (board reset / boot-mode control).
 #[tauri::command]
 pub fn serial_set_signal(

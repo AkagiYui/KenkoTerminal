@@ -6,6 +6,7 @@ mod pty;
 mod serial;
 pub mod sftp;
 pub mod ssh;
+mod telnet;
 pub mod tunnel;
 
 use tauri::Manager;
@@ -15,6 +16,7 @@ use pty::PtyManager;
 use serial::SerialManager;
 use sftp::SftpManager;
 use ssh::SshManager;
+use telnet::TelnetManager;
 use tunnel::TunnelManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -33,6 +35,7 @@ pub fn run() {
         .manage(SerialManager::default())
         .manage(SftpManager::default())
         .manage(MonitorManager::default())
+        .manage(TelnetManager::default())
         .manage(TunnelManager::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
@@ -46,6 +49,7 @@ pub fn run() {
             serial::serial_list,
             serial::serial_open,
             serial::serial_write,
+            serial::serial_write_bytes,
             serial::serial_set_signal,
             serial::serial_close,
             sftp::sftp_connect,
@@ -60,6 +64,9 @@ pub fn run() {
             monitor::probe_system,
             monitor::monitor_start,
             monitor::monitor_stop,
+            telnet::telnet_open,
+            telnet::telnet_write,
+            telnet::telnet_close,
             batch::batch_run,
             tunnel::tunnel_list,
             tunnel::tunnel_add,
