@@ -40,6 +40,8 @@ fn default_port() -> u16 {
 pub(crate) struct Client {
     host: String,
     port: u16,
+    /// Local target for remote (-R) forwarded channels, if this is a remote-forward conn.
+    forward: Option<(String, u16)>,
 }
 
 /// Authenticated client connection handle (used by the tunnel supervisor).
@@ -59,6 +61,27 @@ impl client::Handler for Client {
             Err(_) => Ok(false), // present but changed → reject
         }
     }
+
+    // Remote forward (-R): server-initiated channels connect to our local target.
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::client::Msg>,
+        _connected_address: &str,
+        _connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        _session: &mut russh::client::Session,
+    ) -> Result<(), Self::Error> {
+        if let Some((host, port)) = self.forward.clone() {
+            tokio::spawn(async move {
+                if let Ok(mut tcp) = tokio::net::TcpStream::connect((host.as_str(), port)).await {
+                    let mut stream = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
+                }
+            });
+        }
+        Ok(())
+    }
 }
 
 fn russh_config() -> Arc<client::Config> {
@@ -72,10 +95,11 @@ fn russh_config() -> Arc<client::Config> {
 }
 
 /// Connect and authenticate. Auth order: ssh-agent → password.
-pub(crate) async fn connect_and_auth(cfg: &SshConfig) -> Result<Handle<Client>> {
+async fn connect_client(cfg: &SshConfig, forward: Option<(String, u16)>) -> Result<Handle<Client>> {
     let handler = Client {
         host: cfg.host.clone(),
         port: cfg.port,
+        forward,
     };
     let mut handle = client::connect(russh_config(), (cfg.host.as_str(), cfg.port), handler)
         .await
@@ -113,6 +137,18 @@ pub(crate) async fn connect_and_auth(cfg: &SshConfig) -> Result<Handle<Client>> 
     }
 
     Err(anyhow!("authentication failed for {}@{}", cfg.user, cfg.host))
+}
+
+pub(crate) async fn connect_and_auth(cfg: &SshConfig) -> Result<Handle<Client>> {
+    connect_client(cfg, None).await
+}
+
+/// Connect with a local target for remote (-R) forwarded channels.
+pub(crate) async fn connect_and_auth_fwd(
+    cfg: &SshConfig,
+    forward: (String, u16),
+) -> Result<Handle<Client>> {
+    connect_client(cfg, Some(forward)).await
 }
 
 /// Run a single command and capture (stdout+stderr, exit_code). Used by tests and
@@ -156,6 +192,21 @@ pub struct SshManager {
     next_id: AtomicU32,
 }
 
+/// Open an authenticated connection + an interactive shell channel.
+async fn open_shell(
+    config: &SshConfig,
+    cols: u16,
+    rows: u16,
+) -> anyhow::Result<(SshHandle, russh::Channel<russh::client::Msg>)> {
+    let handle = connect_and_auth(config).await?;
+    let channel = handle.channel_open_session().await?;
+    channel
+        .request_pty(false, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
+        .await?;
+    channel.request_shell(true).await?;
+    Ok((handle, channel))
+}
+
 #[tauri::command]
 pub async fn ssh_connect(
     manager: tauri::State<'_, SshManager>,
@@ -164,42 +215,64 @@ pub async fn ssh_connect(
     rows: u16,
     on_output: Channel<Vec<u8>>,
 ) -> Result<u32, String> {
-    let handle = connect_and_auth(&config).await.map_err(|e| format!("{e:#}"))?;
-    let mut channel = handle.channel_open_session().await.map_err(|e| e.to_string())?;
-    channel
-        .request_pty(false, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
-        .await
-        .map_err(|e| e.to_string())?;
-    channel.request_shell(true).await.map_err(|e| e.to_string())?;
+    // First connect must succeed so bad credentials surface immediately.
+    let (handle, channel) = open_shell(&config, cols, rows).await.map_err(|e| format!("{e:#}"))?;
 
     let (tx, mut rx) = mpsc::unbounded_channel::<SshCmd>();
     let id = manager.next_id.fetch_add(1, Ordering::Relaxed);
 
+    // Supervisor: pump the shell; on unexpected drop, reconnect forever (R6).
     async_runtime::spawn(async move {
-        // Keep the connection handle alive for the lifetime of the session.
-        let _handle = handle;
-        loop {
-            tokio::select! {
-                cmd = rx.recv() => match cmd {
-                    Some(SshCmd::Data(d)) => { let _ = channel.data(&d[..]).await; }
-                    Some(SshCmd::Resize(c, r)) => {
-                        let _ = channel.window_change(c as u32, r as u32, 0, 0).await;
+        let mut handle = handle;
+        let mut channel = channel;
+        let (mut cols, mut rows) = (cols, rows);
+        'outer: loop {
+            // pump the current shell
+            loop {
+                tokio::select! {
+                    cmd = rx.recv() => match cmd {
+                        Some(SshCmd::Data(d)) => { let _ = channel.data(&d[..]).await; }
+                        Some(SshCmd::Resize(c, r)) => {
+                            cols = c; rows = r;
+                            let _ = channel.window_change(c as u32, r as u32, 0, 0).await;
+                        }
+                        Some(SshCmd::Close) | None => { let _ = channel.eof().await; break 'outer; }
+                    },
+                    msg = channel.wait() => match msg {
+                        Some(ChannelMsg::Data { data }) => {
+                            if on_output.send(data.to_vec()).is_err() { break 'outer; }
+                        }
+                        Some(ChannelMsg::ExtendedData { data, .. }) => {
+                            if on_output.send(data.to_vec()).is_err() { break 'outer; }
+                        }
+                        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break, // channel dead → reconnect
+                        _ => {}
+                    },
+                }
+            }
+
+            // reconnect with capped backoff + jitter, forever
+            drop(handle);
+            let _ = on_output.send(b"\r\n\x1b[33m[disconnected - reconnecting...]\x1b[0m\r\n".to_vec());
+            let mut attempt = 0u32;
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(crate::tunnel::backoff_delay_jittered(attempt)) => {}
+                    cmd = rx.recv() => match cmd {
+                        Some(SshCmd::Close) | None => break 'outer,
+                        Some(SshCmd::Resize(c, r)) => { cols = c; rows = r; }
+                        Some(SshCmd::Data(_)) => {} // dropped while disconnected
                     }
-                    Some(SshCmd::Close) | None => {
-                        let _ = channel.eof().await;
+                }
+                match open_shell(&config, cols, rows).await {
+                    Ok((h, ch)) => {
+                        handle = h;
+                        channel = ch;
+                        let _ = on_output.send(b"\x1b[32m[reconnected]\x1b[0m\r\n".to_vec());
                         break;
                     }
-                },
-                msg = channel.wait() => match msg {
-                    Some(ChannelMsg::Data { data }) => {
-                        if on_output.send(data.to_vec()).is_err() { break; }
-                    }
-                    Some(ChannelMsg::ExtendedData { data, .. }) => {
-                        if on_output.send(data.to_vec()).is_err() { break; }
-                    }
-                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                    _ => {}
-                },
+                    Err(_) => attempt = attempt.saturating_add(1),
+                }
             }
         }
     });

@@ -27,6 +27,7 @@ serialport = "4"
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
 dirs = "6"
 anyhow = "1"
+fastrand = "2"
 
 # --- disk-saving dev profile (see PLAN.md §"空间规划") ---
 [profile.dev]

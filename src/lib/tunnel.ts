@@ -11,6 +11,7 @@ export type TunnelRule = {
   remote_host: string;
   remote_port: number;
   enabled: boolean;
+  mode: string; // "local" | "remote" | "dynamic"
 };
 
 export const listTunnels = () => invoke<TunnelRule[]>("tunnel_list");
