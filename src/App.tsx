@@ -2,6 +2,7 @@ import { useState } from "react";
 import { TerminalView } from "./components/Terminal";
 import { Tunnels } from "./components/Tunnels";
 import { Serial } from "./components/Serial";
+import { FileManager } from "./components/FileManager";
 import { serialSetSignal, type Session, type SessionSpec } from "./lib/session";
 
 const inputCls =
@@ -16,6 +17,8 @@ export default function App() {
   const [active, setActive] = useState<Session | null>(null);
   const [dtr, setDtr] = useState(false);
   const [rts, setRts] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
+  const [cwd, setCwd] = useState<string | undefined>(undefined);
 
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
@@ -91,32 +94,48 @@ export default function App() {
           <span className="truncate text-neutral-400" title={status}>
             {status || "idle"}
           </span>
-          {active?.kind === "serial" && (
-            <div className="ml-auto flex items-center gap-1">
-              <button className={chipCls} onClick={resetBoard} title="pulse EN (reset to run)">
-                Reset
-              </button>
-              <button
-                className={`${chipCls} ${dtr ? "bg-teal-800" : ""}`}
-                onClick={() => setSignals(!dtr, rts)}
-              >
-                DTR
-              </button>
-              <button
-                className={`${chipCls} ${rts ? "bg-teal-800" : ""}`}
-                onClick={() => setSignals(dtr, !rts)}
-              >
-                RTS
-              </button>
-            </div>
-          )}
+          <div className="ml-auto flex items-center gap-1">
+            {active?.kind === "serial" && (
+              <>
+                <button className={chipCls} onClick={resetBoard} title="pulse EN (reset to run)">
+                  Reset
+                </button>
+                <button className={`${chipCls} ${dtr ? "bg-teal-800" : ""}`} onClick={() => setSignals(!dtr, rts)}>
+                  DTR
+                </button>
+                <button className={`${chipCls} ${rts ? "bg-teal-800" : ""}`} onClick={() => setSignals(dtr, !rts)}>
+                  RTS
+                </button>
+              </>
+            )}
+            <button
+              className={`${chipCls} ${showFiles ? "bg-teal-800" : ""}`}
+              onClick={() => setShowFiles((v) => !v)}
+            >
+              Files
+            </button>
+          </div>
         </div>
-        <div className="min-h-0 flex-1">
-          {spec ? (
-            <TerminalView key={sessionKey} spec={spec} onStatus={setStatus} onSession={setActive} />
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-neutral-600">
-              Start a local shell, SSH, or open a serial port
+
+        <div className="flex min-h-0 flex-1">
+          <div className="min-h-0 flex-1">
+            {spec ? (
+              <TerminalView
+                key={sessionKey}
+                spec={spec}
+                onStatus={setStatus}
+                onSession={setActive}
+                onCwd={setCwd}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-neutral-600">
+                Start a local shell, SSH, or open a serial port
+              </div>
+            )}
+          </div>
+          {showFiles && (
+            <div className="min-h-0 w-96 shrink-0 border-l border-neutral-800">
+              <FileManager cwd={cwd} />
             </div>
           )}
         </div>

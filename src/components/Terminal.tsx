@@ -16,10 +16,12 @@ export function TerminalView({
   spec,
   onStatus,
   onSession,
+  onCwd,
 }: {
   spec: SessionSpec;
   onStatus?: (s: string) => void;
   onSession?: (s: Session | null) => void;
+  onCwd?: (path: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -38,6 +40,18 @@ export function TerminalView({
     term.loadAddon(fit);
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = "11";
+
+    // OSC 7: shells report cwd as file://host/path — drive the file manager.
+    term.parser.registerOscHandler(7, (data) => {
+      try {
+        const p = decodeURIComponent(new URL(data).pathname);
+        if (p) onCwd?.(p);
+      } catch {
+        /* not a file:// URI */
+      }
+      return true;
+    });
+
     term.open(el);
     try {
       term.loadAddon(new WebglAddon());

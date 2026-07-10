@@ -2,6 +2,7 @@ mod config;
 mod daemon;
 mod pty;
 mod serial;
+pub mod sftp;
 pub mod ssh;
 pub mod tunnel;
 
@@ -9,6 +10,7 @@ use tauri::Manager;
 
 use pty::PtyManager;
 use serial::SerialManager;
+use sftp::SftpManager;
 use ssh::SshManager;
 use tunnel::TunnelManager;
 
@@ -26,6 +28,7 @@ pub fn run() {
         .manage(PtyManager::default())
         .manage(SshManager::default())
         .manage(SerialManager::default())
+        .manage(SftpManager::default())
         .manage(TunnelManager::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
@@ -41,6 +44,15 @@ pub fn run() {
             serial::serial_write,
             serial::serial_set_signal,
             serial::serial_close,
+            sftp::sftp_connect,
+            sftp::sftp_list,
+            sftp::sftp_realpath,
+            sftp::sftp_read,
+            sftp::sftp_write,
+            sftp::sftp_mkdir,
+            sftp::sftp_remove,
+            sftp::sftp_rename,
+            sftp::sftp_close,
             tunnel::tunnel_list,
             tunnel::tunnel_add,
             tunnel::tunnel_remove,
