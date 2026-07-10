@@ -28,6 +28,23 @@ pub struct BatchResult {
     pub ms: u64,
 }
 
+/// Append an audit entry (who ran what, where, when) to `audit.jsonl`.
+fn audit(command: &str, hosts: &[String]) {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let line = serde_json::json!({ "ts": ts, "command": command, "hosts": hosts });
+    let path = crate::config::config_path("audit.jsonl");
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        use std::io::Write;
+        let _ = writeln!(f, "{line}");
+    }
+}
+
 async fn run_one(target: &BatchTarget, command: &str) -> BatchResult {
     let start = Instant::now();
     let (ok, exit_code, output) = match exec_capture(&target.ssh, command).await {
@@ -73,6 +90,7 @@ pub async fn batch_run(
     forks: Option<usize>,
     on_result: Channel<BatchResult>,
 ) -> Result<(), String> {
+    audit(&command, &targets.iter().map(|t| t.ssh.host.clone()).collect::<Vec<_>>());
     let sem = Arc::new(Semaphore::new(forks.unwrap_or(8).max(1)));
     let command = Arc::new(command);
     let mut handles = Vec::with_capacity(targets.len());
