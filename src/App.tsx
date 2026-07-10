@@ -3,6 +3,7 @@ import { TerminalView } from "./components/Terminal";
 import { Tunnels } from "./components/Tunnels";
 import { Serial } from "./components/Serial";
 import { FileManager } from "./components/FileManager";
+import { Monitor } from "./components/Monitor";
 import { serialSetSignal, type Session, type SessionSpec } from "./lib/session";
 
 const inputCls =
@@ -18,6 +19,7 @@ export default function App() {
   const [dtr, setDtr] = useState(false);
   const [rts, setRts] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const [showMonitor, setShowMonitor] = useState(false);
   const [cwd, setCwd] = useState<string | undefined>(undefined);
 
   const [host, setHost] = useState("");
@@ -109,6 +111,12 @@ export default function App() {
               </>
             )}
             <button
+              className={`${chipCls} ${showMonitor ? "bg-teal-800" : ""}`}
+              onClick={() => setShowMonitor((v) => !v)}
+            >
+              Monitor
+            </button>
+            <button
               className={`${chipCls} ${showFiles ? "bg-teal-800" : ""}`}
               onClick={() => setShowFiles((v) => !v)}
             >
@@ -118,6 +126,11 @@ export default function App() {
         </div>
 
         <div className="flex min-h-0 flex-1">
+          {showMonitor && (
+            <div className="min-h-0 w-64 shrink-0 overflow-y-auto border-r border-neutral-800">
+              <Monitor host={host} user={user} password={password} />
+            </div>
+          )}
           <div className="min-h-0 flex-1">
             {spec ? (
               <TerminalView

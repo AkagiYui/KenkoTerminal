@@ -1,5 +1,6 @@
 mod config;
 mod daemon;
+mod monitor;
 mod pty;
 mod serial;
 pub mod sftp;
@@ -8,6 +9,7 @@ pub mod tunnel;
 
 use tauri::Manager;
 
+use monitor::MonitorManager;
 use pty::PtyManager;
 use serial::SerialManager;
 use sftp::SftpManager;
@@ -29,6 +31,7 @@ pub fn run() {
         .manage(SshManager::default())
         .manage(SerialManager::default())
         .manage(SftpManager::default())
+        .manage(MonitorManager::default())
         .manage(TunnelManager::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
@@ -53,6 +56,9 @@ pub fn run() {
             sftp::sftp_remove,
             sftp::sftp_rename,
             sftp::sftp_close,
+            monitor::probe_system,
+            monitor::monitor_start,
+            monitor::monitor_stop,
             tunnel::tunnel_list,
             tunnel::tunnel_add,
             tunnel::tunnel_remove,
