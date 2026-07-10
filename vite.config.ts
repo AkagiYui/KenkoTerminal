@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import iconifyOffline from "vite-plugin-iconify-offline";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -14,6 +15,7 @@ export default defineConfig({
       },
     }),
     tailwindcss(),
+    iconifyOffline(),
   ],
   // Tauri expects a fixed dev port and quiet output.
   clearScreen: false,

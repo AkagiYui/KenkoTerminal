@@ -9,6 +9,8 @@ import { SerialDebugger } from "./components/SerialDebugger";
 import { SavedConnections } from "./components/SavedConnections";
 import { connSave } from "./lib/connections";
 import { serialSetSignal, writeSession, type Session, type SessionSpec } from "./lib/session";
+import { useTranslation } from "react-i18next";
+import { Icon } from "@iconify/react";
 
 const inputCls =
   "rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-neutral-100 outline-none focus:border-neutral-500";
@@ -31,6 +33,7 @@ function tabTitle(spec: SessionSpec): string {
 }
 
 export default function App() {
+  const { t, i18n } = useTranslation();
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Record<string, Session>>({});
@@ -130,12 +133,14 @@ export default function App() {
   return (
     <div className="flex h-full w-full">
       <aside className="flex w-64 shrink-0 flex-col gap-4 overflow-y-auto border-r border-neutral-800 p-3 text-sm">
-        <div className="text-xs font-semibold uppercase tracking-wider text-teal-400">KenkoTerminal</div>
+        <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-teal-400">
+          <Icon icon="lucide:terminal" className="text-base" /> KenkoTerminal
+        </div>
 
         <SavedConnections onLaunch={launch} reload={connReload} />
 
         <button className={btnCls} onClick={() => launch({ kind: "local" })}>
-          Local shell
+          {t("localShell")}
         </button>
 
         <form
@@ -185,14 +190,14 @@ export default function App() {
 
       <main className="flex min-h-0 flex-1 flex-col">
         <div className="flex h-8 items-center gap-2 border-b border-neutral-800 px-3 text-xs">
-          <span className="truncate text-neutral-400" title={status}>{status || "idle"}</span>
+          <span className="truncate text-neutral-400" title={status}>{status || t("idle")}</span>
           <div className="ml-auto flex items-center gap-1">
             <button
               className={`${chipCls} ${broadcast ? "bg-amber-700 text-amber-50" : ""}`}
               onClick={() => setBroadcast((v) => !v)}
               title="mirror typed input to ALL open tabs"
             >
-              ⛯ Broadcast
+              ⛯ {t("broadcast")}
             </button>
             {active?.kind === "serial" && (
               <>
@@ -201,10 +206,13 @@ export default function App() {
                 <button className={`${chipCls} ${rts ? "bg-teal-800" : ""}`} onClick={() => setSignals(dtr, !rts)}>RTS</button>
               </>
             )}
-            <button className={`${chipCls} ${showDebugger ? "bg-teal-800" : ""}`} onClick={() => setShowDebugger((v) => !v)}>Debugger</button>
-            <button className={`${chipCls} ${showBatch ? "bg-teal-800" : ""}`} onClick={() => setShowBatch((v) => !v)}>Batch</button>
-            <button className={`${chipCls} ${showMonitor ? "bg-teal-800" : ""}`} onClick={() => setShowMonitor((v) => !v)}>Monitor</button>
-            <button className={`${chipCls} ${showFiles ? "bg-teal-800" : ""}`} onClick={() => setShowFiles((v) => !v)}>Files</button>
+            <button className={`${chipCls} ${showDebugger ? "bg-teal-800" : ""}`} onClick={() => setShowDebugger((v) => !v)}>{t("debugger")}</button>
+            <button className={`${chipCls} ${showBatch ? "bg-teal-800" : ""}`} onClick={() => setShowBatch((v) => !v)}>{t("batch")}</button>
+            <button className={`${chipCls} ${showMonitor ? "bg-teal-800" : ""}`} onClick={() => setShowMonitor((v) => !v)}>{t("monitor")}</button>
+            <button className={`${chipCls} ${showFiles ? "bg-teal-800" : ""}`} onClick={() => setShowFiles((v) => !v)}>{t("files")}</button>
+            <button className={chipCls} onClick={() => i18n.changeLanguage(i18n.language === "zh" ? "en" : "zh")} title="language">
+              {i18n.language === "zh" ? "EN" : "中"}
+            </button>
           </div>
         </div>
 
@@ -253,7 +261,7 @@ export default function App() {
                   ))}
                   {tabs.length === 0 && (
                     <div className="flex h-full items-center justify-center text-sm text-neutral-600">
-                      Start a local shell, SSH, serial, or telnet
+                      {t("startHint")}
                     </div>
                   )}
                 </div>
