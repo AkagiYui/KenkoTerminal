@@ -96,17 +96,22 @@ fn russh_config() -> Arc<client::Config> {
 
 /// Connect and authenticate. Auth order: ssh-agent → password.
 async fn connect_client(cfg: &SshConfig, forward: Option<(String, u16)>) -> Result<Handle<Client>> {
-    let handler = Client {
-        host: cfg.host.clone(),
-        port: cfg.port,
-        forward,
+    // Resolve ~/.ssh/config aliases (HostName / Port / User / IdentityFile).
+    let resolved = crate::ssh_config::resolve(&cfg.host);
+    let hostname = resolved.hostname.clone().unwrap_or_else(|| cfg.host.clone());
+    let port = if cfg.port == 22 { resolved.port.unwrap_or(22) } else { cfg.port };
+    let user = if cfg.user.is_empty() || cfg.user == "root" {
+        resolved.user.clone().unwrap_or_else(|| cfg.user.clone())
+    } else {
+        cfg.user.clone()
     };
-    let mut handle = client::connect(russh_config(), (cfg.host.as_str(), cfg.port), handler)
-        .await
-        .with_context(|| format!("connect {}:{}", cfg.host, cfg.port))?;
 
-    // 1) ssh-agent — reuse the user's native keys (R2). Cross-platform:
-    //    SSH_AUTH_SOCK on unix, the OpenSSH named pipe on Windows.
+    let handler = Client { host: hostname.clone(), port, forward };
+    let mut handle = client::connect(russh_config(), (hostname.as_str(), port), handler)
+        .await
+        .with_context(|| format!("connect {hostname}:{port}"))?;
+
+    // 1) ssh-agent — reuse the user's native keys (R2).
     #[cfg(unix)]
     let agent = AgentClient::connect_env().await.ok();
     #[cfg(windows)]
@@ -118,7 +123,7 @@ async fn connect_client(cfg: &SshConfig, forward: Option<(String, u16)>) -> Resu
         if let Ok(identities) = agent.request_identities().await {
             for key in identities {
                 if let Ok(AuthResult::Success) = handle
-                    .authenticate_publickey_with(cfg.user.as_str(), key, None, &mut agent)
+                    .authenticate_publickey_with(user.as_str(), key, None, &mut agent)
                     .await
                 {
                     return Ok(handle);
@@ -127,16 +132,32 @@ async fn connect_client(cfg: &SshConfig, forward: Option<(String, u16)>) -> Resu
         }
     }
 
-    // 2) password fallback.
+    // 2) private key files — IdentityFile from ssh config + the usual defaults.
+    let mut key_paths = resolved.identity_files.clone();
+    if let Some(home) = dirs::home_dir() {
+        for name in ["id_ed25519", "id_ecdsa", "id_rsa"] {
+            key_paths.push(home.join(".ssh").join(name));
+        }
+    }
+    for kp in key_paths {
+        if let Ok(key) = russh::keys::load_secret_key(&kp, None) {
+            let kh = russh::keys::PrivateKeyWithHashAlg::new(std::sync::Arc::new(key), None);
+            if let Ok(AuthResult::Success) = handle.authenticate_publickey(user.as_str(), kh).await {
+                return Ok(handle);
+            }
+        }
+    }
+
+    // 3) password fallback.
     if let Some(pw) = &cfg.password {
         if let Ok(AuthResult::Success) =
-            handle.authenticate_password(cfg.user.as_str(), pw.as_str()).await
+            handle.authenticate_password(user.as_str(), pw.as_str()).await
         {
             return Ok(handle);
         }
     }
 
-    Err(anyhow!("authentication failed for {}@{}", cfg.user, cfg.host))
+    Err(anyhow!("authentication failed for {user}@{hostname}"))
 }
 
 pub(crate) async fn connect_and_auth(cfg: &SshConfig) -> Result<Handle<Client>> {

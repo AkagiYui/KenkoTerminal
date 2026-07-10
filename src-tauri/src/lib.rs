@@ -7,6 +7,7 @@ mod pty;
 mod serial;
 pub mod sftp;
 pub mod ssh;
+mod ssh_config;
 mod telnet;
 pub mod tunnel;
 
