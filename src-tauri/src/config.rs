@@ -30,3 +30,24 @@ pub fn save_tunnels(rules: &[TunnelRule]) -> Result<()> {
     std::fs::write(tunnels_path(), serde_json::to_vec_pretty(rules)?)?;
     Ok(())
 }
+
+// --- generic JSON config helpers (connections, groups, settings, ...) ---
+
+pub fn config_path(name: &str) -> PathBuf {
+    let mut p = config_dir();
+    p.push(name);
+    p
+}
+
+pub fn load_json<T: serde::de::DeserializeOwned + Default>(name: &str) -> T {
+    std::fs::read(config_path(name))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_json<T: serde::Serialize>(name: &str, value: &T) -> Result<()> {
+    std::fs::create_dir_all(config_dir())?;
+    std::fs::write(config_path(name), serde_json::to_vec_pretty(value)?)?;
+    Ok(())
+}

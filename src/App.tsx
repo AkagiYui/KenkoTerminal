@@ -6,6 +6,8 @@ import { FileManager } from "./components/FileManager";
 import { Monitor } from "./components/Monitor";
 import { Batch } from "./components/Batch";
 import { SerialDebugger } from "./components/SerialDebugger";
+import { SavedConnections } from "./components/SavedConnections";
+import { connSave } from "./lib/connections";
 import { serialSetSignal, writeSession, type Session, type SessionSpec } from "./lib/session";
 
 const inputCls =
@@ -49,6 +51,25 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [telnetHost, setTelnetHost] = useState("");
   const [telnetPort, setTelnetPort] = useState("23");
+  const [connReload, setConnReload] = useState(0);
+
+  async function saveSsh() {
+    if (!host) return;
+    await connSave(
+      { id: crypto.randomUUID(), name: `${user}@${host}`, kind: "ssh", host, port: Number(port) || 22, user, has_password: !!password },
+      password || "",
+    );
+    setConnReload((n) => n + 1);
+  }
+  async function saveTelnet() {
+    if (!telnetHost) return;
+    await connSave({ id: crypto.randomUUID(), name: `telnet ${telnetHost}:${telnetPort}`, kind: "telnet", host: telnetHost, port: Number(telnetPort) || 23, has_password: false });
+    setConnReload((n) => n + 1);
+  }
+  async function saveSerial(path: string, baud: number) {
+    await connSave({ id: crypto.randomUUID(), name: `serial ${path.split("/").pop()}`, kind: "serial", path, baud, has_password: false });
+    setConnReload((n) => n + 1);
+  }
 
   function launch(spec: SessionSpec) {
     const id = crypto.randomUUID();
@@ -109,6 +130,8 @@ export default function App() {
       <aside className="flex w-64 shrink-0 flex-col gap-4 overflow-y-auto border-r border-neutral-800 p-3 text-sm">
         <div className="text-xs font-semibold uppercase tracking-wider text-teal-400">KenkoTerminal</div>
 
+        <SavedConnections onLaunch={launch} reload={connReload} />
+
         <button className={btnCls} onClick={() => launch({ kind: "local" })}>
           Local shell
         </button>
@@ -125,11 +148,14 @@ export default function App() {
           <input className={inputCls} placeholder="port" value={port} onChange={(e) => setPort(e.target.value)} />
           <input className={inputCls} placeholder="user" value={user} onChange={(e) => setUser(e.target.value)} />
           <input className={inputCls} type="password" placeholder="password (blank = ssh-agent)" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button className={btnCls} type="submit" disabled={!host}>Connect</button>
+          <div className="flex gap-1">
+            <button className={`${btnCls} flex-1`} type="submit" disabled={!host}>Connect</button>
+            <button type="button" className={chipCls} title="save connection" disabled={!host} onClick={saveSsh}>★</button>
+          </div>
         </form>
 
         <div className="border-t border-neutral-800 pt-3">
-          <Serial onLaunch={launch} />
+          <Serial onLaunch={launch} onSave={saveSerial} />
         </div>
 
         <form
@@ -144,7 +170,10 @@ export default function App() {
             <input className={inputCls} placeholder="host" value={telnetHost} onChange={(e) => setTelnetHost(e.target.value)} />
             <input className={`${inputCls} w-16`} placeholder="port" value={telnetPort} onChange={(e) => setTelnetPort(e.target.value)} />
           </div>
-          <button className={btnCls} type="submit" disabled={!telnetHost}>Connect</button>
+          <div className="flex gap-1">
+            <button className={`${btnCls} flex-1`} type="submit" disabled={!telnetHost}>Connect</button>
+            <button type="button" className={chipCls} title="save connection" disabled={!telnetHost} onClick={saveTelnet}>★</button>
+          </div>
         </form>
 
         <div className="border-t border-neutral-800 pt-3">

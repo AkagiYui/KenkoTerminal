@@ -1,5 +1,6 @@
 pub mod batch;
 mod config;
+mod connections;
 mod daemon;
 mod monitor;
 mod pty;
@@ -68,6 +69,10 @@ pub fn run() {
             telnet::telnet_write,
             telnet::telnet_close,
             batch::batch_run,
+            connections::conn_list,
+            connections::conn_save,
+            connections::conn_delete,
+            connections::conn_password,
             tunnel::tunnel_list,
             tunnel::tunnel_add,
             tunnel::tunnel_remove,
