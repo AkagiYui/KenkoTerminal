@@ -15,9 +15,11 @@ import {
 export function TerminalView({
   spec,
   onStatus,
+  onSession,
 }: {
   spec: SessionSpec;
   onStatus?: (s: string) => void;
+  onSession?: (s: Session | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +59,7 @@ export function TerminalView({
         }
         session = s;
         onStatus?.(`${spec.kind} connected`);
+        onSession?.(s);
         term.onData((d) => void writeSession(s, d));
       } catch (e) {
         onStatus?.(`error: ${String(e)}`);
@@ -74,6 +77,7 @@ export function TerminalView({
       disposed = true;
       ro.disconnect();
       if (session) void killSession(session);
+      onSession?.(null);
       term.dispose();
     };
     // `spec` is fixed per mount — App remounts via `key` for a new session.

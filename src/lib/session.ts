@@ -7,15 +7,28 @@ export type SshConfig = {
   password?: string;
 };
 
-export type SessionSpec = { kind: "local" } | { kind: "ssh"; config: SshConfig };
+export type SessionSpec =
+  | { kind: "local" }
+  | { kind: "ssh"; config: SshConfig }
+  | { kind: "serial"; path: string; baud: number };
 
-/** A live backend session (local PTY or SSH channel). */
-export type Session = { kind: "local" | "ssh"; id: number };
+/** A live backend session (local PTY, SSH channel, or serial port). */
+export type Session = { kind: "local" | "ssh" | "serial"; id: number };
 
-/**
- * Spawn a session. Raw output bytes stream back over a Tauri channel.
- * Dispatches to the local-PTY or SSH backend by kind.
- */
+export type SerialPortEntry = {
+  name: string;
+  vid: number | null;
+  pid: number | null;
+  serial_number: string | null;
+  product: string | null;
+};
+
+export const listSerialPorts = () => invoke<SerialPortEntry[]>("serial_list");
+
+/** DTR/RTS line control (board reset / boot-mode). */
+export const serialSetSignal = (id: number, dtr: boolean, rts: boolean) =>
+  invoke<void>("serial_set_signal", { id, dtr, rts });
+
 export async function spawnSession(
   spec: SessionSpec,
   cols: number,
@@ -29,23 +42,36 @@ export async function spawnSession(
     const id = await invoke<number>("pty_spawn", { cols, rows, onOutput: channel });
     return { kind: "local", id };
   }
-  const id = await invoke<number>("ssh_connect", {
-    config: spec.config,
-    cols,
-    rows,
+  if (spec.kind === "ssh") {
+    const id = await invoke<number>("ssh_connect", {
+      config: spec.config,
+      cols,
+      rows,
+      onOutput: channel,
+    });
+    return { kind: "ssh", id };
+  }
+  const id = await invoke<number>("serial_open", {
+    path: spec.path,
+    baud: spec.baud,
+    assertDtrRts: false, // never auto-reset the board on connect
     onOutput: channel,
   });
-  return { kind: "ssh", id };
+  return { kind: "serial", id };
 }
 
 export function writeSession(s: Session, data: string): Promise<void> {
-  return invoke(s.kind === "local" ? "pty_write" : "ssh_write", { id: s.id, data });
+  const cmd = s.kind === "local" ? "pty_write" : s.kind === "ssh" ? "ssh_write" : "serial_write";
+  return invoke(cmd, { id: s.id, data });
 }
 
 export function resizeSession(s: Session, cols: number, rows: number): Promise<void> {
-  return invoke(s.kind === "local" ? "pty_resize" : "ssh_resize", { id: s.id, cols, rows });
+  if (s.kind === "serial") return Promise.resolve(); // serial has no window size
+  const cmd = s.kind === "local" ? "pty_resize" : "ssh_resize";
+  return invoke(cmd, { id: s.id, cols, rows });
 }
 
 export function killSession(s: Session): Promise<void> {
-  return invoke(s.kind === "local" ? "pty_kill" : "ssh_close", { id: s.id });
+  const cmd = s.kind === "local" ? "pty_kill" : s.kind === "ssh" ? "ssh_close" : "serial_close";
+  return invoke(cmd, { id: s.id });
 }

@@ -1,12 +1,14 @@
 mod config;
 mod daemon;
 mod pty;
+mod serial;
 pub mod ssh;
 pub mod tunnel;
 
 use tauri::Manager;
 
 use pty::PtyManager;
+use serial::SerialManager;
 use ssh::SshManager;
 use tunnel::TunnelManager;
 
@@ -23,6 +25,7 @@ pub fn run() {
         ))
         .manage(PtyManager::default())
         .manage(SshManager::default())
+        .manage(SerialManager::default())
         .manage(TunnelManager::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
@@ -33,6 +36,11 @@ pub fn run() {
             ssh::ssh_write,
             ssh::ssh_resize,
             ssh::ssh_close,
+            serial::serial_list,
+            serial::serial_open,
+            serial::serial_write,
+            serial::serial_set_signal,
+            serial::serial_close,
             tunnel::tunnel_list,
             tunnel::tunnel_add,
             tunnel::tunnel_remove,
