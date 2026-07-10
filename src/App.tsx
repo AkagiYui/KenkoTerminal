@@ -111,6 +111,8 @@ export default function App() {
   }
 
   const active = activeTab ? sessions[activeTab] : null;
+  const activeSpec = tabs.find((t) => t.id === activeTab)?.spec;
+  const activeSshConfig = activeSpec?.kind === "ssh" ? activeSpec.config : undefined;
   const [dtr, setDtr] = useState(false);
   const [rts, setRts] = useState(false);
   async function setSignals(nd: boolean, nr: boolean) {
@@ -209,7 +211,11 @@ export default function App() {
         <div className="flex min-h-0 flex-1">
           {showMonitor && (
             <div className="min-h-0 w-64 shrink-0 overflow-y-auto border-r border-neutral-800">
-              <Monitor host={host} user={user} password={password} />
+              <Monitor
+                host={activeSshConfig?.host ?? host}
+                user={activeSshConfig?.user ?? user}
+                password={activeSshConfig?.password ?? password}
+              />
             </div>
           )}
 

@@ -61,6 +61,7 @@ export function Monitor({ host: h0, user: u0, password: p0 }: { host?: string; u
   }
 
   const memPct = sample && sample.mem_total_kb > 0 ? (sample.mem_used_kb / sample.mem_total_kb) * 100 : 0;
+  const diskPct = sample && sample.disk_total_kb > 0 ? (sample.disk_used_kb / sample.disk_total_kb) * 100 : 0;
   const spark = hist.map((v, i) => `${(i / Math.max(hist.length - 1, 1)) * 120},${30 - (v / 100) * 30}`).join(" ");
 
   return (
@@ -93,6 +94,43 @@ export function Monitor({ host: h0, user: u0, password: p0 }: { host?: string; u
         </div>
         <Bar pct={memPct} color="bg-sky-500" />
       </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="flex justify-between text-xs">
+          <span className="text-neutral-400">Disk /</span>
+          <span className="tabular-nums text-violet-400">
+            {sample && sample.disk_total_kb > 0
+              ? `${(sample.disk_used_kb / 1048576).toFixed(1)} / ${(sample.disk_total_kb / 1048576).toFixed(1)} GB`
+              : "—"}
+          </span>
+        </div>
+        <Bar pct={diskPct} color="bg-violet-500" />
+      </div>
+
+      <div className="flex justify-between text-xs">
+        <span className="text-neutral-400">Net</span>
+        <span className="tabular-nums text-neutral-300">
+          ↓ {fmtBps(sample?.net_rx_bps ?? 0)} · ↑ {fmtBps(sample?.net_tx_bps ?? 0)}
+        </span>
+      </div>
+
+      {sample && sample.procs.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          <div className="text-xs uppercase tracking-wider text-neutral-500">Top</div>
+          {sample.procs.map((p, i) => (
+            <div key={i} className="flex justify-between text-[11px]">
+              <span className="truncate text-neutral-300">{p.name}</span>
+              <span className="tabular-nums text-neutral-500">{p.cpu.toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+function fmtBps(bps: number): string {
+  if (bps < 1024) return `${bps} B/s`;
+  if (bps < 1048576) return `${(bps / 1024).toFixed(1)} KB/s`;
+  return `${(bps / 1048576).toFixed(1)} MB/s`;
 }

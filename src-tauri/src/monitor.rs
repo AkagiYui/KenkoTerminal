@@ -1,7 +1,8 @@
 //! Remote system probe + resource monitor (P5).
 //!
-//! Reuses the SSH core. Monitoring streams `/proc` over a single long-lived exec
-//! channel (a shell loop) — no agent to deploy. CPU% is a delta between samples.
+//! Streams CPU / memory / disk / network + top processes over ONE long-lived exec
+//! channel (a shell loop over /proc + df + ps) — no agent to deploy. CPU% and net
+//! rate are deltas between samples.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -39,10 +40,21 @@ pub async fn probe_system(config: SshConfig) -> Result<SystemInfo, String> {
 }
 
 #[derive(Serialize, Clone, Default)]
+pub struct Proc {
+    pub cpu: f32,
+    pub name: String,
+}
+
+#[derive(Serialize, Clone, Default)]
 pub struct Sample {
     pub cpu: f32,
     pub mem_used_kb: u64,
     pub mem_total_kb: u64,
+    pub disk_used_kb: u64,
+    pub disk_total_kb: u64,
+    pub net_rx_bps: u64,
+    pub net_tx_bps: u64,
+    pub procs: Vec<Proc>,
 }
 
 #[derive(Default)]
@@ -51,20 +63,45 @@ pub struct MonitorManager {
     next_id: AtomicU32,
 }
 
-// Emits, every 2s: "<cpu_total> <cpu_idle>" then "<mem_total_kb> <mem_avail_kb>" then "__T__".
+const INTERVAL_SECS: u64 = 2;
+
+// Per tick: cpu(total idle) / mem(total avail) / net(rx tx) / disk(total used) /
+// __P__ / up to 5 "pcpu comm" process lines / __T__.
 const MON_CMD: &str = "while :; do \
 awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8, $5}' /proc/stat; \
-awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print t, a}' /proc/meminfo; \
+awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}END{print t, a}' /proc/meminfo; \
+awk 'NR>2{rx+=$2; tx+=$10}END{print rx+0, tx+0}' /proc/net/dev; \
+df -kP / 2>/dev/null | awk 'NR==2{print $2, $3}'; \
+echo __P__; \
+ps -eo pcpu=,comm= --sort=-pcpu 2>/dev/null | head -n 5; \
 echo __T__; sleep 2; done";
 
-fn parse_sample(cpu_line: &str, mem_line: &str, prev: &mut Option<(u64, u64)>) -> Option<Sample> {
-    let cpu: Vec<u64> = cpu_line.split_whitespace().filter_map(|x| x.parse().ok()).collect();
-    let mem: Vec<u64> = mem_line.split_whitespace().filter_map(|x| x.parse().ok()).collect();
-    if cpu.len() != 2 || mem.len() != 2 {
+#[derive(Default)]
+struct Prev {
+    cpu: Option<(u64, u64)>,
+    net: Option<(u64, u64)>,
+}
+
+fn nums(s: &str) -> Vec<u64> {
+    s.split_whitespace().filter_map(|x| x.parse().ok()).collect()
+}
+
+fn parse_tick(lines: &[String], prev: &mut Prev) -> Option<Sample> {
+    let p_idx = lines.iter().position(|l| l == "__P__")?;
+    let fixed = &lines[..p_idx];
+    let proc_lines = &lines[p_idx + 1..];
+    if fixed.len() < 4 {
+        return None;
+    }
+    let cpu = nums(&fixed[0]);
+    let mem = nums(&fixed[1]);
+    let net = nums(&fixed[2]);
+    let disk = nums(&fixed[3]);
+    if cpu.len() < 2 || mem.len() < 2 {
         return None;
     }
     let (total, idle) = (cpu[0], cpu[1]);
-    let cpu_pct = match *prev {
+    let cpu_pct = match prev.cpu {
         Some((pt, pi)) => {
             let dt = total.saturating_sub(pt);
             let di = idle.saturating_sub(pi);
@@ -76,11 +113,48 @@ fn parse_sample(cpu_line: &str, mem_line: &str, prev: &mut Option<(u64, u64)>) -
         }
         None => 0.0,
     };
-    *prev = Some((total, idle));
+    prev.cpu = Some((total, idle));
+
+    let (net_rx_bps, net_tx_bps) = if net.len() >= 2 {
+        let (rx, tx) = (net[0], net[1]);
+        let rate = match prev.net {
+            Some((prx, ptx)) => (
+                rx.saturating_sub(prx) / INTERVAL_SECS,
+                tx.saturating_sub(ptx) / INTERVAL_SECS,
+            ),
+            None => (0, 0),
+        };
+        prev.net = Some((rx, tx));
+        rate
+    } else {
+        (0, 0)
+    };
+
+    let (disk_total_kb, disk_used_kb) = if disk.len() >= 2 {
+        (disk[0], disk[1])
+    } else {
+        (0, 0)
+    };
+
+    let procs: Vec<Proc> = proc_lines
+        .iter()
+        .filter_map(|l| {
+            let mut it = l.trim().splitn(2, char::is_whitespace);
+            let cpu = it.next()?.parse::<f32>().ok()?;
+            let name = it.next().unwrap_or("").trim().to_string();
+            (!name.is_empty()).then_some(Proc { cpu, name })
+        })
+        .collect();
+
     Some(Sample {
         cpu: cpu_pct,
         mem_used_kb: mem[0].saturating_sub(mem[1]),
         mem_total_kb: mem[0],
+        disk_used_kb,
+        disk_total_kb,
+        net_rx_bps,
+        net_tx_bps,
+        procs,
     })
 }
 
@@ -99,7 +173,7 @@ pub async fn monitor_start(
         let _handle = handle;
         let mut buf = String::new();
         let mut lines: Vec<String> = Vec::new();
-        let mut prev: Option<(u64, u64)> = None;
+        let mut prev = Prev::default();
         loop {
             match channel.wait().await {
                 Some(ChannelMsg::Data { data }) => {
@@ -108,11 +182,9 @@ pub async fn monitor_start(
                         let line: String = buf.drain(..=nl).collect();
                         let line = line.trim().to_string();
                         if line == "__T__" {
-                            if lines.len() >= 2 {
-                                if let Some(s) = parse_sample(&lines[0], &lines[1], &mut prev) {
-                                    if on_sample.send(s).is_err() {
-                                        return;
-                                    }
+                            if let Some(s) = parse_tick(&lines, &mut prev) {
+                                if on_sample.send(s).is_err() {
+                                    return;
                                 }
                             }
                             lines.clear();
@@ -140,18 +212,30 @@ pub fn monitor_stop(manager: tauri::State<'_, MonitorManager>, id: u32) -> Resul
 
 #[cfg(test)]
 mod tests {
-    use super::parse_sample;
+    use super::*;
 
     #[test]
-    fn cpu_delta_and_mem() {
-        let mut prev = None;
-        // first sample seeds prev, cpu = 0
-        let s0 = parse_sample("1000 900", "2000 500", &mut prev).unwrap();
-        assert_eq!(s0.cpu, 0.0);
-        assert_eq!(s0.mem_total_kb, 2000);
+    fn parse_tick_full() {
+        let mut prev = Prev::default();
+        let t1: Vec<String> = ["1000 900", "2000 500", "1000 2000", "10000 4000", "__P__", "50.0 firefox"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let s0 = parse_tick(&t1, &mut prev).unwrap();
+        assert_eq!(s0.cpu, 0.0); // first sample seeds
         assert_eq!(s0.mem_used_kb, 1500);
-        // next: dtotal=100, didle=50 -> 50% busy
-        let s1 = parse_sample("1100 950", "2000 500", &mut prev).unwrap();
+        assert_eq!(s0.disk_total_kb, 10000);
+        assert_eq!(s0.disk_used_kb, 4000);
+        assert_eq!(s0.procs.len(), 1);
+        assert_eq!(s0.procs[0].name, "firefox");
+
+        let t2: Vec<String> = ["1100 950", "2000 500", "3000 5000", "10000 4000", "__P__"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let s1 = parse_tick(&t2, &mut prev).unwrap();
         assert!((s1.cpu - 50.0).abs() < 0.01, "cpu={}", s1.cpu);
+        assert_eq!(s1.net_rx_bps, (3000 - 1000) / 2); // delta / interval
+        assert_eq!(s1.net_tx_bps, (5000 - 2000) / 2);
     }
 }
