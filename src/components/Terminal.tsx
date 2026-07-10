@@ -3,9 +3,22 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "../lib/pty";
+import {
+  spawnSession,
+  writeSession,
+  resizeSession,
+  killSession,
+  type Session,
+  type SessionSpec,
+} from "../lib/session";
 
-export function TerminalView() {
+export function TerminalView({
+  spec,
+  onStatus,
+}: {
+  spec: SessionSpec;
+  onStatus?: (s: string) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,8 +34,7 @@ export function TerminalView() {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    const uni = new Unicode11Addon();
-    term.loadAddon(uni);
+    term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = "11";
     term.open(el);
     try {
@@ -32,31 +44,40 @@ export function TerminalView() {
     }
     fit.fit();
 
-    let ptyId: number | null = null;
+    let session: Session | null = null;
     let disposed = false;
 
+    onStatus?.("connecting…");
     void (async () => {
-      const id = await ptySpawn(term.cols, term.rows, (bytes) => term.write(bytes));
-      if (disposed) {
-        void ptyKill(id);
-        return;
+      try {
+        const s = await spawnSession(spec, term.cols, term.rows, (b) => term.write(b));
+        if (disposed) {
+          void killSession(s);
+          return;
+        }
+        session = s;
+        onStatus?.(`${spec.kind} connected`);
+        term.onData((d) => void writeSession(s, d));
+      } catch (e) {
+        onStatus?.(`error: ${String(e)}`);
+        term.writeln(`\r\n\x1b[31m${String(e)}\x1b[0m`);
       }
-      ptyId = id;
-      term.onData((d) => void ptyWrite(id, d));
     })();
 
     const ro = new ResizeObserver(() => {
       fit.fit();
-      if (ptyId != null) void ptyResize(ptyId, term.cols, term.rows);
+      if (session) void resizeSession(session, term.cols, term.rows);
     });
     ro.observe(el);
 
     return () => {
       disposed = true;
       ro.disconnect();
-      if (ptyId != null) void ptyKill(ptyId);
+      if (session) void killSession(session);
       term.dispose();
     };
+    // `spec` is fixed per mount — App remounts via `key` for a new session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return <div ref={containerRef} className="h-full w-full" />;
